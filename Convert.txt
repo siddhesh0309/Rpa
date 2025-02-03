@@ -1,0 +1,99 @@
+import pandas as pd
+import re
+
+def process_file(input_file, output_excel):
+    with open(input_file, "r", encoding="utf-8") as file:
+        lines = file.readlines()
+
+    # Initialize lists for structured data
+    customers, short_names, tmd_accounts, currencies, int_paid_rcy, int_paid_lcy = [], [], [], [], [], []
+    tax_rcy, tax_lcy = [], []
+
+    current_customer = ""
+    current_short_name = ""
+    current_tmd_ac = ""
+    current_currency = "INR"  # Assuming all currency values are INR
+    current_int_paid_rcy = ""
+    current_int_paid_lcy = ""
+    current_tax_rcy = ""
+    current_tax_lcy = ""
+
+    for line in lines:
+        line = line.strip()
+        
+        # Identify a customer number (Pattern: XXX-XXXXXX)
+        if re.match(r"\d{3}-\d{6}", line):
+            if current_customer:  # Save previous entry before moving to the next
+                customers.append(current_customer)
+                short_names.append(current_short_name)
+                tmd_accounts.append(current_tmd_ac)
+                currencies.append(current_currency)
+                int_paid_rcy.append(current_int_paid_rcy)
+                int_paid_lcy.append(current_int_paid_lcy)
+                tax_rcy.append(current_tax_rcy)
+                tax_lcy.append(current_tax_lcy)
+
+            # Reset variables for new customer
+            current_customer = line
+            current_short_name = ""
+            current_tmd_ac = ""
+            current_currency = "INR"
+            current_int_paid_rcy = ""
+            current_int_paid_lcy = ""
+            current_tax_rcy = ""
+            current_tax_lcy = ""
+
+        elif "INR" in line:  # Identifies INR currency presence
+            current_currency = "INR"
+
+        elif re.match(r"\d{3}-\d{6}-\d{3}", line):  # Identifies TMD A/C pattern
+            current_tmd_ac = line
+
+        elif re.match(r"[\d,]+\.\d{2}", line):  # Identifies numerical values
+            if not current_int_paid_rcy:
+                current_int_paid_rcy = line
+            elif not current_int_paid_lcy:
+                current_int_paid_lcy = line
+            elif not current_tax_rcy:
+                current_tax_rcy = line
+            elif not current_tax_lcy:
+                current_tax_lcy = line
+
+        else:
+            # If it's a name, concatenate to existing short name
+            if current_short_name:
+                current_short_name += " " + line
+            else:
+                current_short_name = line
+
+    # Append the last entry after processing all lines
+    if current_customer:
+        customers.append(current_customer)
+        short_names.append(current_short_name)
+        tmd_accounts.append(current_tmd_ac)
+        currencies.append(current_currency)
+        int_paid_rcy.append(current_int_paid_rcy)
+        int_paid_lcy.append(current_int_paid_lcy)
+        tax_rcy.append(current_tax_rcy)
+        tax_lcy.append(current_tax_lcy)
+
+    # Create DataFrame
+    df = pd.DataFrame({
+        "CUSTOMER NUMBER": customers,
+        "SHORT NAME": short_names,
+        "TMD A/C": tmd_accounts,
+        "CCY": currencies,
+        "INT PAID (RCY)": int_paid_rcy,
+        "INT PAID (LCY)": int_paid_lcy,
+        "TAX (RCY)": tax_rcy,
+        "TAX (LCY)": tax_lcy
+    })
+
+    # Save to Excel
+    df.to_excel(output_excel, index=False)
+    print(f"Excel file saved as {output_excel}")
+
+# Example usage
+input_file = "input_data.txt"  # Replace with actual file path
+output_excel = "converted_data.xlsx"
+process_file(input_file, output_excel)
