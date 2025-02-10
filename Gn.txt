@@ -1,0 +1,10 @@
+Sub ApplyInternalSensitivityLabel()
+    Dim lbl As Object
+    Set lbl = ActiveWorkbook.SensitivityLabel
+    
+    ' Apply the "Internal" Sensitivity Label
+    lbl.SetLabel Application.SensitivityLabelPolicy.Labels("Internal")
+    
+    ' Save the workbook
+    ActiveWorkbook.Save
+End Sub
