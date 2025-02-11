@@ -1,0 +1,115 @@
+import os
+import time
+from datetime import datetime, timedelta
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+# Set up Chrome WebDriver
+chrome_driver_path = "path/to/chromedriver"  # Update with actual path
+download_path = "C:/Users/YourUsername/Downloads"  # Update with your downloads folder
+
+options = webdriver.ChromeOptions()
+prefs = {"download.default_directory": download_path}
+options.add_experimental_option("prefs", prefs)
+
+service = Service(chrome_driver_path)
+driver = webdriver.Chrome(service=service, options=options)
+
+# Open the website
+website_url = "https://example.com"  # Replace with actual URL
+driver.get(website_url)
+
+# Wait until page loads
+wait = WebDriverWait(driver, 20)
+
+# Function to wait for file download to complete
+def wait_for_download():
+    timeout = 90  # Max wait time in seconds
+    start_time = time.time()
+
+    while True:
+        time.sleep(2)  # Check every 2 seconds
+        files = os.listdir(download_path)
+        downloaded_file = None
+
+        for file in files:
+            if file.endswith(".csv") or file.endswith(".xlsx"):  # Adjust for file type
+                downloaded_file = os.path.join(download_path, file)
+                if not file.endswith(".crdownload"):  # Ensure file is fully downloaded
+                    return downloaded_file  # Return the file path
+
+        if time.time() - start_time > timeout:
+            print("Download timed out!")
+            driver.quit()
+            exit()
+
+# Function to download and rename the report for a given date range
+def download_report(from_date, to_date):
+    formatted_from_date_input = from_date.strftime("%d/%m/%Y")  # Website format: DD/MM/YYYY
+    formatted_to_date_input = to_date.strftime("%d/%m/%Y")  # Website format: DD/MM/YYYY
+
+    formatted_from_date_filename = from_date.strftime("%d %b %Y")  # Filename format: 01 Dec 2023
+    formatted_to_date_filename = to_date.strftime("%d %b %Y")  # Filename format: 10 Feb 2024
+
+    print(f"Downloading report from {formatted_from_date_filename} to {formatted_to_date_filename}...")
+
+    # Wait for 'Reports' button and click
+    reports_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Reports')]")))
+    reports_button.click()
+
+    # Wait for 'Transactions' button and click
+    transactions_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Transactions')]")))
+    transactions_button.click()
+
+    # Wait for 'From Date' field and enter date
+    from_date_field = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[@id='fromDate']")))  # Adjust ID/XPath
+    from_date_field.clear()
+    from_date_field.send_keys(formatted_from_date_input)
+    from_date_field.send_keys(Keys.RETURN)
+
+    # Wait for 'To Date' field and enter date
+    to_date_field = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[@id='toDate']")))  # Adjust ID/XPath
+    to_date_field.clear()
+    to_date_field.send_keys(formatted_to_date_input)
+    to_date_field.send_keys(Keys.RETURN)
+
+    # Wait for 'Download' button and click
+    download_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Download')]")))  # Adjust XPath
+    download_button.click()
+
+    # Wait until file is fully downloaded
+    downloaded_file = wait_for_download()
+
+    # Rename the downloaded file
+    file_extension = os.path.splitext(downloaded_file)[1]  # Get file extension (.csv or .xlsx)
+    new_filename = f"{formatted_from_date_filename} - {formatted_to_date_filename}{file_extension}"
+    new_filepath = os.path.join(download_path, new_filename)
+    os.rename(downloaded_file, new_filepath)
+
+    print(f"File downloaded and renamed to: {new_filename}")
+
+# **✅ Corrected Date Selection**
+today = datetime.today()
+
+# ✅ Fix: Correctly get "01 Dec" instead of "01 Jan" when today is in February
+if today.month > 2:
+    from_date = datetime(today.year, today.month - 2, 1)  # Two months ago, 1st day
+else:
+    from_date = datetime(today.year - 1, 12 + (today.month - 2), 1)  # Handles Jan/Feb cases correctly
+
+to_date = today  # Current date
+
+download_report(from_date, to_date)
+
+# ✅ Second Report: "Full month before the first report"
+last_month_end = from_date - timedelta(days=1)  # Last day of previous month
+last_month_start = last_month_end.replace(day=1)  # First day of previous month
+
+download_report(last_month_start, last_month_end)
+
+# Close the browser after both downloads
+driver.quit()
