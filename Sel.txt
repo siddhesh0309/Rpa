@@ -1,0 +1,97 @@
+import time
+import os
+from datetime import datetime
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+def automate_transaction_report(url, from_date, to_date, driver_path):
+    """Automates downloading and renaming a transaction report with retry logic."""
+    
+    # 🔹 Set default download directory
+    DOWNLOAD_PATH = os.path.expanduser("~/Downloads")  # Adjust for your OS
+
+    # 🔹 Set Chrome options for auto-download
+    chrome_options = Options()
+    chrome_options.add_experimental_option("prefs", {
+        "download.default_directory": DOWNLOAD_PATH,
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
+        "safebrowsing.enabled": True
+    })
+
+    # 🔹 Initialize WebDriver
+    service = Service(driver_path)
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+
+    try:
+        # 🔹 Open the website
+        driver.get(url)
+        wait = WebDriverWait(driver, 10)
+
+        # 🔹 Click on "Reports"
+        wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Reports')]"))).click()
+        time.sleep(2)
+
+        # 🔹 Click on "Transaction"
+        wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Transaction')]"))).click()
+        time.sleep(2)
+
+        # 🔹 Enter "From Date" and "To Date"
+        wait.until(EC.presence_of_element_located((By.ID, "fromDate"))).send_keys(from_date)
+        time.sleep(1)
+        wait.until(EC.presence_of_element_located((By.ID, "toDate"))).send_keys(to_date)
+        time.sleep(1)
+
+        # 🔹 Click "Export" with Retry Logic (Max 3 Attempts)
+        export_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Export')]")))
+        max_retries = 3
+        attempt = 0
+        file_downloaded = False
+
+        while attempt < max_retries:
+            export_button.click()
+            time.sleep(10)  # Wait for download
+
+            # Check if file is downloaded
+            if os.path.exists(os.path.join(DOWNLOAD_PATH, "Transaction Report.xlsx")):
+                file_downloaded = True
+                break  # Exit loop if download is successful
+            
+            print(f"⚠️ Attempt {attempt + 1} failed. Retrying...")
+            attempt += 1
+
+        if not file_downloaded:
+            print("❌ Download failed after multiple attempts. Please check the website.")
+            return
+
+        # 🔹 Convert dates to required format
+        from_date_formatted = datetime.strptime(from_date, "%Y-%m-%d").strftime("%d %b %Y")
+        to_date_formatted = datetime.strptime(to_date, "%Y-%m-%d").strftime("%d %b %Y")
+
+        # 🔹 Generate new filename
+        new_filename = f"Transaction Report {from_date_formatted} to {to_date_formatted}.xlsx"
+
+        # 🔹 Rename the downloaded file
+        old_file = os.path.join(DOWNLOAD_PATH, "Transaction Report.xlsx")  # Update actual filename
+        new_file = os.path.join(DOWNLOAD_PATH, new_filename)
+
+        if os.path.exists(old_file):
+            os.rename(old_file, new_file)
+            print(f"✅ File renamed to: {new_filename}")
+        else:
+            print("❌ Download completed but file not found for renaming!")
+
+    finally:
+        driver.quit()
+
+# 🔹 Example Usage:
+website_url = "https://example.com"  # Replace with actual URL
+from_date = "2024-01-01"
+to_date = "2024-01-31"
+chromedriver_path = "path/to/chromedriver"  # Update with your ChromeDriver path
+
+automate_transaction_report(website_url, from_date, to_date, chromedriver_path)
