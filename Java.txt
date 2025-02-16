@@ -1,1 +1,48 @@
+import pandas as pd
 
+# Load QlikView Open and Closed data
+open_file = "open_qlikview.xlsx"  # Replace with actual filename
+closed_file = "closed_qlikview.xlsx"  # Replace with actual filename
+
+df_open = pd.read_excel(open_file)
+df_closed = pd.read_excel(closed_file)
+
+# Define required columns
+required_columns = [
+    "Customer Number", "Customer Name", "Lead Market", "Customer Type", "Review Reason",
+    "Risk Rating", "Task Status", "Assigned to Role", "Initiated Date", "Overall Age",
+    "Age Bucket", "Review Status", "Approval/Cancel Date", "Trigger Description",
+    "Latest PAQC Status", "PT Bucket", "Cancellation Reason", "Cancellation Comments",
+    "Final Status", "Final Date"
+]
+
+# Merge Open and Closed data (excluding Final Status & Final Date)
+df_merged = pd.concat([df_open, df_closed], ignore_index=True)
+
+# Ensure all required columns exist
+for col in required_columns:
+    if col not in df_merged.columns:
+        df_merged[col] = None  # Add missing columns if not present
+
+# Step 4: Set Final Status to be the same as Review Status
+df_merged["Final Status"] = df_merged["Review Status"]
+
+# Step 5: Assign Final Date based on conditions
+df_merged["Final Date"] = df_merged.apply(
+    lambda row: row["Initiated Date"]
+    if row["Final Status"] in ["Open"]
+    else row["Approval/Cancel Date"],
+    axis=1
+)
+
+# Step 6: Sort Data (Newest to Oldest Final Date, A-Z Final Status)
+df_merged.sort_values(by=["Final Date", "Final Status"], ascending=[False, True], inplace=True)
+
+# Step 7: Remove Duplicate Cases (Assuming "Customer Number" identifies duplicates)
+df_merged.drop_duplicates(subset=["Customer Number"], keep="first", inplace=True)
+
+# Step 8: Save the processed file
+output_filename = f"merged_qlikview_{pd.Timestamp.today().strftime('%Y%m%d')}.xlsx"
+df_merged.to_excel(output_filename, index=False)
+
+print(f"Processed file saved as {output_filename}")
