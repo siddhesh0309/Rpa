@@ -1,0 +1,140 @@
+import os
+import time
+import shutil
+import subprocess
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
+
+# ✅ Define Paths
+download_path = os.path.expanduser("~\\Downloads")  # Default Downloads folder
+target_folder = "C:\\ProgramData\\Daily Recon"  # Final storage location
+
+# Ensure target directory exists
+if not os.path.exists(target_folder):
+    os.makedirs(target_folder)
+
+# ✅ Sensitivity Label for "Internal"
+sensitivity_label_id = "0a8e6374-7bb7-4040-a22f-4e3924ef3558"
+
+# ✅ Chrome WebDriver Setup
+chrome_driver_path = "path/to/chromedriver"  # Update with the actual path
+options = webdriver.ChromeOptions()
+service = Service(chrome_driver_path)
+driver = webdriver.Chrome(service=service, options=options)
+
+# Open the website
+website_url = "https://example.com"  # Replace with actual URL
+driver.get(website_url)
+
+# Wait for elements
+wait = WebDriverWait(driver, 20)
+actions = ActionChains(driver)
+
+# ✅ Single Function to Handle Report Automation
+def download_and_process_report(button_xpath, report_filename):
+    try:
+        # Step 1: Click on 'Cards Flags'
+        cards_flags_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Cards Flags')]")))
+        cards_flags_button.click()
+
+        # Step 2: Select Dropdown Options
+        dropdown_options = wait.until(EC.presence_of_all_elements_located((By.XPATH, "//select[@class='dropdown']//option")))
+        for option in dropdown_options:
+            option.click()
+            time.sleep(1)  # Small delay for dropdowns to apply
+
+        # Step 3: Select the First 4 Months
+        month_selector = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Month')]")))
+        month_selector.click()
+
+        months = wait.until(EC.presence_of_all_elements_located((By.XPATH, "//ul[@class='month-list']//li")))
+        for month in months[:4]:
+            month.click()
+            time.sleep(0.5)
+
+        # Step 4: Click on the Report Button using XPath
+        report_button = wait.until(EC.element_to_be_clickable((By.XPATH, button_xpath)))
+        report_button.click()
+
+        # Step 5: Right-click on the Table and Trigger Download
+        table_element = wait.until(EC.presence_of_element_located((By.XPATH, "//table[@class='data-table']")))
+        actions.context_click(table_element).perform()
+
+        download_as_option = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Download As')]")))
+        download_as_option.click()
+
+        data_option = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Data')]")))
+        data_option.click()
+
+        export_option = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Export')]")))
+        export_option.click()
+
+        # Step 6: Wait for the File to Download (3 Attempts Max)
+        for attempt in range(1, 4):
+            print(f"🔄 Attempt {attempt} to download the report...")
+            timeout = 90  # 90 seconds timeout for each attempt
+            start_time = time.time()
+            downloaded_file = None
+
+            while time.time() - start_time < timeout:
+                time.sleep(2)
+                files = os.listdir(download_path)
+                for file in files:
+                    if file.endswith(".csv") or file.endswith(".xlsx"):
+                        downloaded_file = os.path.join(download_path, file)
+                        if not file.endswith(".crdownload"):  # Ensure fully downloaded
+                            break
+
+                if downloaded_file:
+                    print(f"✅ Report downloaded successfully.")
+                    break
+
+            if downloaded_file:
+                break
+            else:
+                print(f"❌ Download failed on attempt {attempt}. Retrying...\n")
+
+        if not downloaded_file:
+            print(f"❌ Failed to download the report after 3 attempts.")
+            return
+
+        # Step 7: Rename and Move the File
+        new_filename = f"{report_filename}.xlsx"
+        new_filepath = os.path.join(target_folder, new_filename)
+        shutil.move(downloaded_file, new_filepath)
+        print(f"✅ File renamed and moved to: {new_filepath}")
+
+        # Step 8: Apply Sensitivity Label
+        powershell_command = f"""
+        Import-Module AIPService;
+        Connect-AIPService;
+        Set-AIPFileLabel -Path "{new_filepath}" -LabelId {sensitivity_label_id};
+        """
+
+        completed = subprocess.run(
+            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", powershell_command],
+            capture_output=True, text=True, shell=True
+        )
+
+        print("PowerShell Output:", completed.stdout)
+        print("PowerShell Error:", completed.stderr)
+
+        if completed.returncode == 0:
+            print(f"✅ Sensitivity Label 'Internal' Applied Successfully to {report_filename} Report")
+        else:
+            print(f"❌ Failed to Apply Sensitivity Label for {report_filename} Report")
+
+    except Exception as e:
+        print(f"❌ Error occurred while processing {report_filename} report: {e}")
+
+
+# ✅ Run Automation for Both Reports by Passing XPath
+download_and_process_report("//button[contains(text(), 'Total Login')]", "Total Login Report")
+download_and_process_report("//button[contains(text(), 'Approved')]", "Approved Report")
+
+# Close browser
+driver.quit()
