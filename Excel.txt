@@ -1,0 +1,76 @@
+import pandas as pd
+import chardet
+import os
+
+# Function to detect file encoding for CSV files
+def detect_encoding(file_path):
+    with open(file_path, "rb") as f:
+        result = chardet.detect(f.read())
+    return result["encoding"]
+
+# Define required columns (as per your provided list)
+required_columns = [
+    "Customer Number", "Customer Name", "Lead Market", "Customer Type", "Review Reason",
+    "Risk Rating", "Task Status", "Assigned to Role", "Initiated Date", "Overall Age",
+    "Age Bucket", "Review Status", "Approval/Cancel Date", "Trigger Description",
+    "Latest PAQC Status", "PT Bucket", "Cancellation Reason", "Cancellation Comments",
+    "Final Status", "Final Date"
+]
+
+# File path (Update with actual file name)
+input_file = "qlikview_data.xlsx"  # Change this to your actual file name
+
+# Determine if the file is Excel or CSV
+file_extension = os.path.splitext(input_file)[1].lower()
+
+if file_extension == ".xlsx":
+    # Read Open & Closed sheets from Excel
+    df_open = pd.read_excel(input_file, sheet_name="Open")
+    df_closed = pd.read_excel(input_file, sheet_name="Closed")
+elif file_extension == ".csv":
+    # Detect encoding for CSV files
+    encoding_type = detect_encoding(input_file)
+    # Read CSV assuming it has two sheets split into two CSV files (if applicable)
+    df_open = pd.read_csv(input_file, encoding=encoding_type)
+    df_closed = pd.read_csv(input_file.replace("open", "closed"), encoding=encoding_type)
+else:
+    raise ValueError("Unsupported file format. Please provide an Excel (.xlsx) or CSV file.")
+
+# Merge Open and Closed data
+df_merged = pd.concat([df_open, df_closed], ignore_index=True)
+
+# Ensure all required columns exist
+for col in required_columns:
+    if col not in df_merged.columns:
+        df_merged[col] = None  # Add missing columns if not present
+
+# Convert dates to datetime format
+df_merged["Initiated Date"] = pd.to_datetime(df_merged["Initiated Date"], errors="coerce")
+df_merged["Approval/Cancel Date"] = pd.to_datetime(df_merged["Approval/Cancel Date"], errors="coerce")
+
+# Step 4: Set "Final Status" = "Review Status"
+df_merged["Final Status"] = df_merged["Review Status"]
+
+# Step 5: Assign "Final Date" based on conditions
+df_merged["Final Date"] = df_merged.apply(
+    lambda row: row["Initiated Date"] if pd.isna(row["Approval/Cancel Date"]) else row["Approval/Cancel Date"],
+    axis=1
+)
+
+# Step 6: Sort Data (Newest to Oldest Final Date, A-Z Final Status)
+df_merged.sort_values(by=["Final Date", "Final Status"], ascending=[False, True], inplace=True)
+
+# Step 7: Remove Duplicate Cases (Keep the latest entry based on Final Date)
+df_merged = df_merged.sort_values(by=["Final Date"], ascending=False).drop_duplicates(subset=["Customer Number"], keep="first")
+
+# Step 8: Select only the required columns
+df_merged = df_merged[required_columns]
+
+# Step 9: Save the processed file as both CSV and Excel
+output_csv = f"merged_qlikview_{pd.Timestamp.today().strftime('%Y%m%d')}.csv"
+output_xlsx = f"merged_qlikview_{pd.Timestamp.today().strftime('%Y%m%d')}.xlsx"
+
+df_merged.to_csv(output_csv, index=False, encoding="utf-8")
+df_merged.to_excel(output_xlsx, index=False, engine="openpyxl")
+
+print(f"Processed files saved as:\n- {output_csv}\n- {output_xlsx}")
