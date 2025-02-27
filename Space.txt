@@ -1,0 +1,67 @@
+import pandas as pd
+import re
+import spacy
+from country_converter import CountryConverter
+
+# Load spaCy NLP model
+nlp = spacy.load("en_core_web_sm")
+
+# Load the Excel file
+file_path = "your_file.xlsx"  # Replace with actual file path
+df = pd.read_excel(file_path)
+
+# Initialize country converter
+cc = CountryConverter()
+
+# Function to extract named entities using spaCy
+def extract_entities(address):
+    doc = nlp(address)
+    
+    city = ""
+    state = ""
+    postal_code = ""
+    country_name = ""
+    
+    for ent in doc.ents:
+        if ent.label_ in ["GPE", "LOC"]:  # GPE = Geo-Political Entity (City, State, Country)
+            if not country_name:  # Prioritize first match as country
+                country_name = ent.text
+            elif not city:
+                city = ent.text
+            elif not state:
+                state = ent.text
+        elif ent.label_ == "CARDINAL":  # Extract postal codes (numbers)
+            if 4 <= len(ent.text) <= 15 and ent.text.isdigit():
+                postal_code = ent.text
+
+    return city, state, postal_code, country_name
+
+# Function to process each row
+for index, row in df.iterrows():
+    address = str(row['Address'])
+    existing_country_code = str(row['Country_Code'])
+
+    city, state, postal_code, country_name = extract_entities(address)
+
+    # Validate postal code
+    if existing_country_code == "IN":  # India: Postal Code must be 6 digits
+        postal_code = postal_code if len(postal_code) == 6 else "XXXXXX"
+    else:  # Other countries: Postal Code must be between 4-15 digits
+        postal_code = postal_code if 4 <= len(postal_code) <= 15 else "XXXXXX"
+
+    # Set state code for India, else "XX"
+    state_code = state if existing_country_code == "IN" else "XX"
+
+    # Get correct country code
+    correct_country_code = cc.convert(country_name, to='ISO2') if country_name else existing_country_code
+
+    # Update DataFrame
+    df.at[index, 'City_Town'] = city
+    df.at[index, 'Postal_Code'] = postal_code
+    df.at[index, 'State_Code'] = state_code
+    df.at[index, 'Country_Code'] = correct_country_code
+
+# Save the updated file
+output_file = "processed_file.xlsx"
+df.to_excel(output_file, index=False)
+print(f"Processed file saved as {output_file}")
