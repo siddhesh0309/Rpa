@@ -3,11 +3,12 @@ import re
 
 # File paths (Update with actual paths)
 old_file_path = "last_year_data.xlsm"  # Last year's sorted XLSM file
-new_file_path = "current_data.xlsm"  # New XLSM file to process
+new_file_path = "current_data.xlsx"  # New XLSX file to process
+output_file = "processed_file.xlsm"  # Final output file should be XLSM
 
-# Load both old and new XLSM files
-df_old = pd.read_excel(old_file_path, engine="openpyxl")
-df_new = pd.read_excel(new_file_path, engine="openpyxl")
+# Load both old and new files from the "Account Holder" sheet
+df_old = pd.read_excel(old_file_path, sheet_name="Account Holder", engine="openpyxl")
+df_new = pd.read_excel(new_file_path, sheet_name="Account Holder", engine="openpyxl")
 
 # Predefined postal codes and state codes for major Indian cities
 indian_city_postal_codes = {
@@ -44,26 +45,25 @@ def extract_country_code(address):
             return code
     return "XX"  # Default unknown country code
 
-# Convert old data into a dictionary for quick lookup (Customer ID -> Address & Data)
-old_data_dict = df_old.set_index("Customer ID").to_dict(orient="index")
-
-# Process each row in the new file
+# Iterate through df_new and match with df_old
 for index, row in df_new.iterrows():
     customer_id = row["Customer ID"]
     address = str(row["Address"]).strip()
     existing_country_code = str(row["Country_Code"]).strip()
 
-    # Check if customer ID exists in last year's data
-    if customer_id in old_data_dict:
-        old_entry = old_data_dict[customer_id]
+    # Find all matching rows from df_old for the same Customer ID
+    matching_rows = df_old[df_old["Customer ID"] == customer_id]
 
-        # If the address is exactly the same as last year's, update only required columns
-        if address == str(old_entry["Address"]).strip():
-            df_new.at[index, "City_Town"] = old_entry["City_Town"]
-            df_new.at[index, "Postal_Code"] = old_entry["Postal_Code"]
-            df_new.at[index, "State_Code"] = old_entry["State_Code"]
-            df_new.at[index, "Country_Code"] = old_entry["Country_Code"]
-            continue  # Skip extraction since data is available
+    # Check if there is a matching address
+    matched_row = matching_rows[matching_rows["Address"].str.strip() == address]
+
+    if not matched_row.empty:
+        # If exact address match is found, copy values
+        df_new.at[index, "City_Town"] = matched_row["City_Town"].values[0]
+        df_new.at[index, "Postal_Code"] = matched_row["Postal_Code"].values[0]
+        df_new.at[index, "State_Code"] = matched_row["State_Code"].values[0]
+        df_new.at[index, "Country_Code"] = matched_row["Country_Code"].values[0]
+        continue  # Skip extraction since data is available
 
     # If address is new or changed, extract missing values
     city = extract_city(address)
@@ -90,7 +90,8 @@ for index, row in df_new.iterrows():
     df_new.at[index, "State_Code"] = state_code
     df_new.at[index, "Country_Code"] = country_code if country_code != "XX" else existing_country_code
 
-# Save the processed file (keeping macros intact)
-output_file = "processed_file.xlsm"
-df_new.to_excel(output_file, index=False, engine="openpyxl")
-print(f"Processed file saved as {output_file}")
+# Save the processed file as XLSM (keeping macros intact)
+with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+    df_new.to_excel(writer, sheet_name="Account Holder", index=False)
+
+print(f"Processed file saved as {output_file} in 'Account Holder' sheet.")
