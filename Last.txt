@@ -1,0 +1,96 @@
+import pandas as pd
+import re
+
+# File paths (Update with actual paths)
+old_file_path = "last_year_data.xlsm"  # Last year's sorted XLSM file
+new_file_path = "current_data.xlsm"  # New XLSM file to process
+
+# Load both old and new XLSM files
+df_old = pd.read_excel(old_file_path, engine="openpyxl")
+df_new = pd.read_excel(new_file_path, engine="openpyxl")
+
+# Predefined postal codes and state codes for major Indian cities
+indian_city_postal_codes = {
+    "Mumbai": ("400001", "MH"), "Delhi": ("110001", "DL"), "Bangalore": ("560001", "KA"),
+    "Hyderabad": ("500001", "TG"), "Chennai": ("600001", "TN"), "Kolkata": ("700001", "WB"),
+    "Pune": ("411001", "MH"), "Ahmedabad": ("380001", "GJ"), "Jaipur": ("302001", "RJ"),
+    "Lucknow": ("226001", "UP"), "Bhopal": ("462001", "MP"), "Patna": ("800001", "BR"),
+    "Chandigarh": ("160001", "CH"), "Indore": ("452001", "MP"), "Nagpur": ("440001", "MH"),
+    "Coimbatore": ("641001", "TN")
+}
+
+# Mapping of country names to country codes (only a few samples)
+country_codes = {
+    "India": "IN", "United States": "US", "USA": "US", "United Kingdom": "GB",
+    "Germany": "DE", "France": "FR", "Japan": "JP", "Australia": "AU", "Canada": "CA"
+}
+
+# Function to extract postal code using regex
+def extract_postal_code(address):
+    match = re.findall(r'\b\d{4,15}\b', address)  # Find all numbers of 4-15 digits
+    return match[0] if match else ""  # Return first valid match or empty string
+
+# Function to extract city from address based on keyword matching
+def extract_city(address):
+    for city in indian_city_postal_codes.keys():
+        if city.lower() in address.lower():
+            return city
+    return ""
+
+# Function to extract country code from address
+def extract_country_code(address):
+    for country, code in country_codes.items():
+        if country.lower() in address.lower():
+            return code
+    return "XX"  # Default unknown country code
+
+# Convert old data into a dictionary for quick lookup (Customer ID -> Address & Data)
+old_data_dict = df_old.set_index("Customer ID").to_dict(orient="index")
+
+# Process each row in the new file
+for index, row in df_new.iterrows():
+    customer_id = row["Customer ID"]
+    address = str(row["Address"]).strip()
+    existing_country_code = str(row["Country_Code"]).strip()
+
+    # Check if customer ID exists in last year's data
+    if customer_id in old_data_dict:
+        old_entry = old_data_dict[customer_id]
+
+        # If the address is exactly the same as last year's, update only required columns
+        if address == str(old_entry["Address"]).strip():
+            df_new.at[index, "City_Town"] = old_entry["City_Town"]
+            df_new.at[index, "Postal_Code"] = old_entry["Postal_Code"]
+            df_new.at[index, "State_Code"] = old_entry["State_Code"]
+            df_new.at[index, "Country_Code"] = old_entry["Country_Code"]
+            continue  # Skip extraction since data is available
+
+    # If address is new or changed, extract missing values
+    city = extract_city(address)
+    postal_code = extract_postal_code(address)
+    country_code = extract_country_code(address)
+
+    # If postal code is missing for India, lookup city in predefined dictionary
+    if existing_country_code == "IN" or country_code == "IN":
+        if not postal_code or len(postal_code) != 6:
+            postal_code = indian_city_postal_codes.get(city, ("XXXXXX", ""))[0]
+
+    # Validate postal code
+    if existing_country_code == "IN" and len(postal_code) != 6:
+        postal_code = "XXXXXX"
+    elif existing_country_code != "IN" and not (4 <= len(postal_code) <= 15):
+        postal_code = "XXXXXX"
+
+    # If state is missing, assign based on city, else use "XX" for non-India
+    state_code = indian_city_postal_codes.get(city, ("", "XX"))[1] if existing_country_code == "IN" else "XX"
+
+    # Update only the required columns, keeping all other new data unchanged
+    df_new.at[index, "City_Town"] = city
+    df_new.at[index, "Postal_Code"] = postal_code
+    df_new.at[index, "State_Code"] = state_code
+    df_new.at[index, "Country_Code"] = country_code if country_code != "XX" else existing_country_code
+
+# Save the processed file (keeping macros intact)
+output_file = "processed_file.xlsm"
+df_new.to_excel(output_file, index=False, engine="openpyxl")
+print(f"Processed file saved as {output_file}")
