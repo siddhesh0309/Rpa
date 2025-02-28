@@ -1,0 +1,80 @@
+import pandas as pd
+import re
+
+# File paths (Update with actual paths)
+old_file_path = "last_year_data.xlsm"  # Last year's sorted XLSM file
+new_file_path = "current_data.xlsx"  # New XLSX file to process
+output_file = "processed_file.xlsm"  # Final output file should be XLSM
+
+# Load both old and new files from the "Account Holder" sheet
+df_old = pd.read_excel(old_file_path, sheet_name="Account Holder", engine="openpyxl")
+df_new = pd.read_excel(new_file_path, sheet_name="Account Holder", engine="openpyxl")
+
+# Ensure necessary columns exist
+columns_to_update = ["City_Town", "Postal_Code", "State_Code", "Country_Code"]
+for col in columns_to_update:
+    if col not in df_new.columns:
+        df_new[col] = None
+
+# Predefined postal codes and state codes for major Indian cities
+indian_city_postal_codes = {
+    "Mumbai": ("400001", "MH"), "Delhi": ("110001", "DL"), "Bangalore": ("560001", "KA"),
+    "Hyderabad": ("500001", "TG"), "Chennai": ("600001", "TN"), "Kolkata": ("700001", "WB"),
+    "Pune": ("411001", "MH"), "Ahmedabad": ("380001", "GJ"), "Jaipur": ("302001", "RJ"),
+    "Lucknow": ("226001", "UP"), "Bhopal": ("462001", "MP"), "Patna": ("800001", "BR"),
+    "Chandigarh": ("160001", "CH"), "Indore": ("452001", "MP"), "Nagpur": ("440001", "MH"),
+    "Coimbatore": ("641001", "TN")
+}
+
+# Mapping of country names to country codes
+country_codes = {
+    "India": "IN", "United States": "US", "USA": "US", "United Kingdom": "GB",
+    "Germany": "DE", "France": "FR", "Japan": "JP", "Australia": "AU", "Canada": "CA"
+}
+
+# Function to extract postal code using regex
+def extract_postal_code(address):
+    match = re.findall(r'\b\d{4,15}\b', address)  # Find all numbers of 4-15 digits
+    return match[0] if match else "XXXXXX"  # Return first valid match or "XXXXXX"
+
+# Function to extract city from address based on keyword matching
+def extract_city(address):
+    for city in indian_city_postal_codes.keys():
+        if city.lower() in address.lower():
+            return city
+    return ""
+
+# Function to extract country code from address
+def extract_country_code(address):
+    for country, code in country_codes.items():
+        if country.lower() in address.lower():
+            return code
+    return "XX"  # Default unknown country code
+
+# Step 1: Merge new file with old file to find matches (Keeps all duplicates)
+df_updated = df_new.merge(df_old[["Customer ID", "Address"] + columns_to_update], 
+                          on=["Customer ID", "Address"], how="left", suffixes=("", "_old"))
+
+# Step 2: Update only the 4 columns (Keep all other data unchanged)
+for col in columns_to_update:
+    missing_mask = df_updated[col].isna()  # Find missing values
+    df_updated.loc[~missing_mask, col] = df_updated.loc[~missing_mask, col + "_old"]  # Copy old values
+
+# Step 3: Extract missing values dynamically
+mask_missing = df_updated["City_Town"].isna()
+df_updated.loc[mask_missing, "City_Town"] = df_updated.loc[mask_missing, "Address"].apply(extract_city)
+df_updated.loc[mask_missing, "Postal_Code"] = df_updated.loc[mask_missing, "Address"].apply(extract_postal_code)
+df_updated.loc[mask_missing, "Country_Code"] = df_updated.loc[mask_missing, "Address"].apply(extract_country_code)
+
+# Step 4: Assign state codes for India
+india_mask = (df_updated["Country_Code"] == "IN") | (df_updated["Country_Code"].isna())
+df_updated.loc[india_mask, "State_Code"] = df_updated.loc[india_mask, "City_Town"].map(lambda x: indian_city_postal_codes.get(x, ("", "XX"))[1])
+
+# Step 5: Drop "_old" columns to keep only the final updated values
+df_updated.drop(columns=[col + "_old" for col in columns_to_update], inplace=True)
+
+# Step 6: Save the processed file as XLSM (keeping macros intact)
+with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+    df_updated.to_excel(writer, sheet_name="Account Holder", index=False)
+
+print(f"✅ Processed file saved as {output_file} in 'Account Holder' sheet.")
