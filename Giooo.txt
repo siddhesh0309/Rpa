@@ -1,0 +1,41 @@
+import pandas as pd
+from datetime import datetime
+
+# Load Open and Closed QlikView files
+open_file = "open_file.xlsx"  # Update with actual file path
+closed_file = "closed_file.xlsx"  # Update with actual file path
+
+df_open = pd.read_excel(open_file)
+df_closed = pd.read_excel(closed_file)
+
+# Merge both datasets
+df = pd.concat([df_open, df_closed], ignore_index=True)
+
+# Drop Final Status & Final Date if they exist
+if 'Final Status' in df.columns:
+    df.drop(columns=['Final Status'], inplace=True)
+if 'Final Date' in df.columns:
+    df.drop(columns=['Final Date'], inplace=True)
+
+# Set Final Status = Review Status
+df['Final Status'] = df['Review Status']
+
+# Assign Final Date based on conditions
+df['Final Date'] = df['Initiated Date']  # Default for Open cases
+mask = df['Final Status'].isin(['Approval Complete', 'Cancelled Cases'])
+df.loc[mask, 'Final Date'] = df['Approval/Cancel Date']
+
+# Convert Final Date to datetime for sorting
+df['Final Date'] = pd.to_datetime(df['Final Date'], errors='coerce')
+
+# Sort data by Customer Number and Final Date (Newest to Oldest)
+df.sort_values(by=['Customer Number', 'Final Date'], ascending=[True, False], inplace=True)
+
+# Keep only the latest occurrence of each Customer Number
+df_latest = df.drop_duplicates(subset=['Customer Number'], keep='first')
+
+# Save the final file with today's date
+output_file = f"merged_qlikview_{datetime.today().strftime('%Y-%m-%d')}.xlsx"
+df_latest.to_excel(output_file, index=False)
+
+print(f"File saved as: {output_file}")
