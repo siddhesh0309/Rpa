@@ -1,0 +1,61 @@
+import pandas as pd
+from datetime import datetime
+
+# Load the Excel template
+def process_excel(template_path, bdc_path, output_path):
+    # Load the template file
+    df = pd.read_excel(template_path, header=None)
+
+    # Ignore first row and take second row as headers
+    df.columns = df.iloc[1]
+    df = df[2:].reset_index(drop=True)
+
+    # Ensure there are exactly 72 account numbers
+    account_numbers = df["Account Number"].dropna().tolist()
+    if len(account_numbers) < 72:
+        raise ValueError("Template does not contain 72 account numbers.")
+    
+    # Keep only the first 36 account numbers
+    df_first_36 = df.iloc[:36].copy()
+
+    # Load the BDC file
+    bdc_df = pd.read_excel(bdc_path)
+
+    # Ensure the BDC file has the necessary columns
+    if "Account Number" not in bdc_df.columns or "LCY Amount" not in bdc_df.columns:
+        raise ValueError("BDC file must contain 'Account Number' and 'LCY Amount' columns.")
+
+    # Merge to get LCY Amounts based on Account Number
+    df_first_36 = df_first_36.merge(bdc_df[["Account Number", "LCY Amount"]], on="Account Number", how="left")
+
+    # Validate that all 36 account numbers received an LCY Amount
+    if df_first_36["LCY Amount"].isnull().any():
+        raise ValueError("Some account numbers in the first 36 do not have a matching LCY Amount in the BDC file.")
+
+    # Rename LCY Amount to match the expected "Amount" column
+    df_first_36.rename(columns={"LCY Amount": "Amount"}, inplace=True)
+
+    # Duplicate the amounts for the next 36 accounts (without checking Account Numbers)
+    df_next_36 = df.iloc[36:72].copy()
+    df_next_36["Amount"] = df_first_36["Amount"].values  # Just copy values, no lookup
+
+    # Concatenate both dataframes
+    final_df = pd.concat([df_first_36, df_next_36], ignore_index=True)
+
+    # Set the Value Date column to today's date in YYYYMMDD format
+    today_date = datetime.today().strftime('%Y%m%d')
+    final_df["Value Date"] = today_date
+
+    # Set Narrative 3 column as "For {previous month} {year}"
+    previous_month = (datetime.today().replace(day=1) - pd.DateOffset(days=1)).strftime('%B %Y')
+    final_df["Narrative 3"] = f"For {previous_month}"
+
+    # Save the processed file
+    final_df.to_excel(output_path, index=False)
+
+# Example usage
+template_path = "template.xlsx"  # Replace with your actual file path
+bdc_path = "bdc.xlsx"  # Replace with your actual BDC file path
+output_path = "processed_output.xlsx"  # Output file path
+
+process_excel(template_path, bdc_path, output_path)
