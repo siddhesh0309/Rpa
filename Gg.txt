@@ -1,0 +1,42 @@
+import pandas as pd
+from datetime import datetime
+
+# Define file paths
+template_file = "template.xlsx"  # Replace with actual template file path
+bdc_file = "bdc.xlsx"  # Replace with actual BDC file path
+output_file = "processed_template.xlsx"  # Output file
+
+# Load the template file, skipping the first row
+df = pd.read_excel(template_file, skiprows=1)  # Ignore the first row
+
+# Load the BDC file to get LCY Amounts
+bdc_df = pd.read_excel(bdc_file)
+
+# Extract only the first 36 account numbers
+df_first_36 = df.iloc[:36].copy()
+
+# Map account numbers to LCY Amounts from BDC file
+account_to_amount = dict(zip(bdc_df["Account Number"], bdc_df["LCY Amount"]))
+
+# Fill LCY Amount for the first 36 accounts
+df_first_36["Amount"] = df_first_36["Account Number"].map(account_to_amount)
+
+# Handle missing amounts (if any account number is missing in the BDC file)
+df_first_36["Amount"].fillna(0, inplace=True)  # Set missing amounts to 0
+
+# Duplicate amounts for the next 36 account numbers
+df_second_36 = df_first_36.copy()
+df = pd.concat([df_first_36, df_second_36], ignore_index=True)
+
+# Set Value Date column to today's date in YYYYMMDD format
+df["Value Date"] = datetime.today().strftime("%Y%m%d")
+
+# Set Narrative 3 column
+previous_month = (datetime.today().month - 1) % 12 or 12
+current_year = datetime.today().year if previous_month != 12 else datetime.today().year - 1
+df["Narrative 3"] = f"For {previous_month}-{current_year}"
+
+# Save the processed data to a new Excel file
+df.to_excel(output_file, index=False)
+
+print("Processing complete. The new file has been saved as:", output_file)
