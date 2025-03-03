@@ -1,0 +1,54 @@
+import pandas as pd
+from datetime import datetime
+
+# Define file paths
+template_file = "template.xlsx"  # Replace with actual template file path
+bdc_file = "bdc.xlsx"  # Replace with actual BDC file path
+output_file = "processed_template.xlsx"  # Output file
+
+# Load the template file (keep the first row, use the second row as headers)
+df_raw = pd.read_excel(template_file, header=None)  # Read without setting headers
+df_headers = df_raw.iloc[1].tolist()  # Get actual column headers from second row
+df = df_raw.iloc[2:].copy()  # Data starts from the third row
+
+# Reset column names while keeping the first row intact
+df.columns = df_headers
+df_raw.iloc[2:] = df  # Merge back into the original dataframe
+
+# Load the BDC file to get LCY Amounts
+bdc_df = pd.read_excel(bdc_file)
+
+# Extract only the first 36 account numbers
+df_first_36 = df.iloc[:36].copy()
+
+# Map LCY Amount to each respective account number
+account_to_amount = dict(zip(bdc_df["Account Number"], bdc_df["LCY Amount"]))
+df_first_36["Amount"] = df_first_36["Account Number"].map(account_to_amount)
+
+# Handle missing amounts by setting them to 0
+df_first_36["Amount"].fillna(0, inplace=True)  # Default missing amounts to 0
+
+# Create the next 36 rows without keeping account mapping
+df_second_36 = df.iloc[36:72].copy()  # Keep these rows but modify the Amount field
+
+# Assign LCY Amounts from the first 36 rows to the next 36 (without account mapping)
+df_second_36["Amount"] = df_first_36["Amount"].values
+
+# Merge both processed datasets back
+df_final = pd.concat([df_first_36, df_second_36], ignore_index=True)
+
+# Set Value Date column to today's date in YYYYMMDD format
+df_final["Value Date"] = datetime.today().strftime("%Y%m%d")
+
+# Set Narrative 3 column with "For previous-month current-year"
+previous_month = (datetime.today().month - 1) % 12 or 12
+current_year = datetime.today().year if previous_month != 12 else datetime.today().year - 1
+df_final["Narrative 3"] = f"For {previous_month}-{current_year}"
+
+# Merge the processed data back into the original structure while keeping the first row
+df_raw.iloc[2:] = df_final
+
+# Save the processed file while keeping the first row intact
+df_raw.to_excel(output_file, index=False, header=False)
+
+print("Processing complete. The new file has been saved as:", output_file)
